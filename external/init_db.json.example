@@ -1,0 +1,18 @@
+{
+    "departments": {
+        "15d05ac1-8b15-4cc2-b74a-4a5adf8954f6": {
+            "name": "department name",
+            "address": "department address",
+            "timezone": "+01:00"
+        }
+    },
+    "users": {
+        "7930b530-a355-42a3-82b3-f28f6a9d0a98": {
+            "login": "user",
+            "full_name": "user full name",
+            "password": "pass",
+            "ip_v4": "127.0.0.1",
+            "department_id": "15d05ac1-8b15-4cc2-b74a-4a5adf8954f6"
+        }
+    }
+}

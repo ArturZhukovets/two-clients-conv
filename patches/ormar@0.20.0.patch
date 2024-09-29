@@ -1,0 +1,60 @@
+diff -ruN ormar_orig/___PATCHED___.txt ormar/___PATCHED___.txt
+--- ormar_orig/___PATCHED___.txt	1970-01-01 03:00:00.000000000 +0300
++++ ormar/___PATCHED___.txt	2024-05-06 03:06:20.915949885 +0300
+@@ -0,0 +1 @@
++patched
+diff -ruN ormar_orig/fields/constraints.py ormar/fields/constraints.py
+--- ormar_orig/fields/constraints.py	2024-05-06 03:12:39.875315342 +0300
++++ ormar/fields/constraints.py	2024-05-06 03:08:05.998581418 +0300
+@@ -12,8 +12,8 @@
+ 
+ class IndexColumns(Index):
+     def __init__(self, *args: Any, name: Optional[str] = None, **kw: Any) -> None:
+-        if not name:
+-            name = "TEMPORARY_NAME"
++        # if not name:
++        #    name = "TEMPORARY_NAME"
+         super().__init__(name, *args, **kw)
+ 
+     """
+diff -ruN ormar_orig/models/helpers/sqlalchemy.py ormar/models/helpers/sqlalchemy.py
+--- ormar_orig/models/helpers/sqlalchemy.py	2024-05-06 03:12:39.880315226 +0300
++++ ormar/models/helpers/sqlalchemy.py	2024-05-06 03:09:44.430342846 +0300
+@@ -296,6 +296,7 @@
+     :param config: OrmarConfig of the Model without sqlalchemy table constructed
+     :type config: Model class OrmarConfig
+     """
++    return
+     for constraint in config.constraints:
+         if isinstance(constraint, sqlalchemy.UniqueConstraint) and not constraint.name:
+             constraint.name = (
+diff -ruN ormar_orig/models/model.py ormar/models/model.py
+--- ormar_orig/models/model.py	2024-05-06 03:12:39.882315180 +0300
++++ ormar/models/model.py	2024-05-06 03:12:15.188884527 +0300
+@@ -94,16 +94,19 @@
+         expr = self.ormar_config.table.insert()
+         expr = expr.values(**self_fields)
+ 
++        pkname = self.ormar_config.pkname
++        is_need_load_pk = True
+         pk = await self.ormar_config.database.execute(expr)
+         if pk and isinstance(pk, self.pk_type()):
+-            setattr(self, self.ormar_config.pkname, pk)
++            setattr(self, pkname, pk)
++            is_need_load_pk = False
+ 
+         self.set_save_status(True)
+         # refresh server side defaults
+         if any(
+             field.server_default is not None
+             for name, field in self.ormar_config.model_fields.items()
+-            if name not in self_fields
++            if name not in self_fields and (is_need_load_pk or name != pkname)
+         ):
+             await self.load()
+ 
+diff -ruN ormar_orig/ormar/___PATCHED___.txt ormar/ormar/___PATCHED___.txt
+--- ormar_orig/ormar/___PATCHED___.txt	1970-01-01 03:00:00.000000000 +0300
++++ ormar/ormar/___PATCHED___.txt	2024-05-06 03:06:20.915949885 +0300
+@@ -0,0 +1 @@
++patched

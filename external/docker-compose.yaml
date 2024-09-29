@@ -1,0 +1,62 @@
+services:
+
+    ######################################################################################
+
+    frontend-postgres:
+        image: postgres:${L7X_DB_VERSION}
+        environment:
+            POSTGRES_PASSWORD: ${L7X_DB_ADMIN_PASS}
+            POSTGRES_USER: ${L7X_DB_ADMIN_USER}
+            POSTGRES_DB: ${L7X_DB_NAME}
+            POSTGRES_INITDB_ARGS: -E 'UTF-8' --lc-collate='en_US.UTF-8' --lc-ctype='en_US.UTF-8'
+        networks:
+            - private-network
+        restart: always
+        volumes:
+            - ${L7X_DB_PATH}:/var/lib/postgresql/data
+
+    #####################################################################################
+
+    frontend:
+        image: git.nordicwise.com:4999/business/frontend-for-bank-external:${L7X_FRONTEND_VERSION}
+        environment:
+            WAIT_HOSTS: frontend-postgres:5432
+            L7X_WORKER_COUNT: 1
+            L7X_SERVER_EXTERNAL_URL: http://localhost
+            L7X_SERVER_PORT: ${L7X_FRONTEND_PORT}
+            L7X_DB_PASS: ${L7X_DB_ADMIN_PASS}
+            L7X_DB_NAME: ${L7X_DB_NAME}
+            L7X_DB_USER: ${L7X_DB_ADMIN_USER}
+            L7X_DB_HOST: frontend-postgres
+            L7X_DB_PORT: 5432
+            L7X_DB_ADMIN_USER: ${L7X_DB_ADMIN_USER}
+            L7X_DB_ADMIN_PASS: ${L7X_DB_ADMIN_PASS}
+#            L7X_INIT_DB_JSON_PATH: /init-db.json
+            L7X_TRANSLATE_API_URL: ${L7X_PRIVATE_SERVER_HOST_PORT}/api
+            L7X_TRANSLATE_API_LANGS_CACHE_EXPIRE_SEC: 3600
+            L7X_SSL_CERTIFICATE_PATH: /certificate.crt
+            L7X_SSL_PRIVATE_KEY_PATH: /private.key
+            L7X_PWD_SALT_LEN: ${L7X_PWD_SALT_LEN}
+            L7X_PWD_HASH_LEN: ${L7X_PWD_HASH_LEN}
+            L7X_PWD_TIME_COST: ${L7X_PWD_TIME_COST}
+            L7X_MEMORY_COST_KIB: ${L7X_MEMORY_COST_KIB}
+            L7X_PWD_PARALLELISM: ${L7X_PWD_PARALLELISM}
+        restart: always
+        depends_on:
+            - frontend-postgres
+        networks:
+            - private-network
+        ports:
+            - ${L7X_FRONTEND_PORT}:${L7X_FRONTEND_PORT}
+        volumes:
+            - ${L7X_DB_INIT_JSON_PATH}:/init-db.json:ro
+            - ${L7X_SSL_PRIVATE_KEY_PATH}:/private.key:ro
+            - ${L7X_SSL_CERTIFICATE_PATH}:/certificate.crt:ro
+
+######################################################################################
+
+networks:
+    private-network:
+        driver: bridge
+
+######################################################################################

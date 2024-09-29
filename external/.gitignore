@@ -1,0 +1,8 @@
+*
+!/docker-compose.yaml
+!/run.sh
+!/.env.example
+!/init_db.json.example
+!/README.md
+!/.gitignore
+!/stop.sh
