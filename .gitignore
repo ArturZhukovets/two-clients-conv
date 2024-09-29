@@ -1889,5 +1889,4 @@ package-lock.json
 !/static/images/favicon.ico
 /docker_volumes/
 metric_models_dir/
-.nicegui
 #########################################################################################
