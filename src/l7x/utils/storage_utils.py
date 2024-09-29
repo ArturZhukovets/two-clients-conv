@@ -1,9 +1,6 @@
-import json
-from collections import deque
 from dataclasses import asdict, dataclass, field
 from uuid import UUID
 
-from humanfriendly.terminal import message
 from nicegui import App
 
 from l7x.db import TextModel
@@ -20,8 +17,16 @@ class Conversation:
     second_user_lang: str = None
 
     messages: list = field(default_factory=list)
+    shared_elements: dict = field(default_factory=dict)
     # messages_first_user: list = field(default_factory=list)
     # messages_second_user: list = field(default_factory=list)
+
+    def add_elem(self, session_id: str, name: str, element):
+        session_elements = self.shared_elements.get(session_id)
+        if session_elements is None:
+            self.shared_elements[session_id] = {name: element}
+            return
+        session_elements[name] = element
 
     def add_session_to_conv(self, session_id: str) -> None:
         if not self.first_user_session:

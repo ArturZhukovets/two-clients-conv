@@ -167,7 +167,12 @@ class GuiProcessor:
     @check_session_exp
     async def stop_mic_record(self, client: bool = True) -> None:
         """Конец записи на странице диалога."""
-        dialog_background: Final = self.element('dialog_background')
+        # dialog_background: Final = self.element('dialog_background')
+        for session_id in self._conv_in_storage.shared_elements:
+            dialog_background = self._conv_in_storage.shared_elements[session_id]['dialog_background']
+            if dialog_background.visible:
+                print("Hide dialog background")
+                dialog_background.set_visibility(False)
 
         if self.audio_recorder is not None:
             self.audio_recorder.stop_recording()
@@ -175,8 +180,8 @@ class GuiProcessor:
             self.active_mic_btn.set_visibility(True)
 
         with self.element('chat'):  # добавление иконки ожидания при нажатии на микрофон
-            if dialog_background.visible:
-                dialog_background.set_visibility(False)
+            # if dialog_background.visible:
+            #     dialog_background.set_visibility(False)
             with ui.row().classes('message-container').classes(
                 'justify-end' if client else 'justify-start') as self.wait_ico:
                 with ui.row().classes('client-spinner-container' if client else 'operator-spinner-container'):
@@ -255,6 +260,7 @@ class GuiProcessor:
         """Функция обработчик записанного аудио с микрофона на странице диалога."""
         self.audio_recorder = None
         chat: Final = self.element('chat')
+        chat_messages: Final = self.element('chat_messages')
         mic: Final[Image] = self.element('mic_not_active')
         dialog_background = self.element('dialog_background')
 
@@ -306,22 +312,23 @@ class GuiProcessor:
                 await _deactivate_record()
 
                 with chat:
-                    self.chat_messages.refresh()
+                    chat_messages.refresh()
 
                 return
 
         await _deactivate_record(error_msg=True)
 
-    @ui.refreshable
-    async def chat_messages(self):
-        print('render messages')
-        for message in self._conv_in_storage.messages:
-            is_client = str(message.owner_session_uuid.primary_uuid) != self.session_uuid
-            client_direction = self.direction()
-            ui.chat_message(
-                text=message.translated_text,
-                sent=is_client,
-            )
+    # @ui.refreshable
+    # async def chat_messages(self):
+    #     print('render messages')
+    #     for message in self._conv_in_storage.messages:
+    #         # await self._add_dialog_msg(message)
+    #         is_client = str(message.owner_session_uuid.primary_uuid) != self.session_uuid
+    #         client_direction = self.direction()
+    #         ui.chat_message(
+    #             text=message.translated_text,
+    #             sent=is_client,
+    #         )
         # interlocutor_session_id = self._conv_in_storage.get_interlocutor_session_id(client_session_id=self.session_uuid)
         #
         # if self._conv_in_storage.messages.get(interlocutor_session_id):
@@ -428,7 +435,7 @@ class GuiProcessor:
         if messages:
             self.element('dialog_background').set_visibility(False)
             with self.element('chat'):
-                self.chat_messages.refresh()
+                self.element('chat_messages').refresh()
                 # for message in messages:
                 #     self.messages.append(message)
                 #     await self._add_dialog_msg(message, fixed=(message.edit_ts != None))

@@ -94,6 +94,17 @@ async def select_lang_page_gui(gp: GuiProcessor, storage: ObservableDict):
 def invert_visibility(x: bool):
     return not x
 
+@ui.refreshable
+async def chat_messages(gp, conv):
+    print('render messages')
+    for message in conv.messages:
+        # await self._add_dialog_msg(message)
+        is_client = str(message.owner_session_uuid.primary_uuid) != gp.session_uuid
+        ui.chat_message(
+            text=message.translated_text,
+            sent=is_client,
+        )
+
 
 async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
 
@@ -130,14 +141,15 @@ async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
                 'background-text',
             )
         with ui.element('div').classes('w-full chat-window'):
-
-            with ui.element('div').classes(
+            chat = ui.element('div').classes(
                 'w-full chat-container',
             ).bind_visibility_from(
                 target_object=dialog_background,
                 value=False,
-            ) as chat:
-                await gp.chat_messages()
+            )
+            with chat:
+                await chat_messages(gp, cur_conversation)
+
             # ui.timer(5, callback=gp.check_interlocutor_messages)
     ui.column().classes('footer-container shadow-line')
 
@@ -193,10 +205,15 @@ async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
                                                                             x: f"Interlocutor selected lang is {x}")
                 ui.label(text=f'Current user: {cur_user.full_name}').classes('mt-4 text-zinc-500')
 
+    cur_conversation.add_elem(str(gp.session_uuid), 'dialog_background', dialog_background)
+    # cur_conversation.shared_elements[str(gp.session_uuid)]['dialog_background'] = dialog_background
+    # cur_conversation.shared_elements['dialog_placeholder'] = dialog_placeholder
+
     storage['elements'].update({
         'dialog_background': dialog_background,
         'dialog_placeholder': dialog_placeholder,
         'chat': chat,
+        'chat_messages': chat_messages,
         'mic_not_active': mic_not_active,
     })
 
