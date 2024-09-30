@@ -65,9 +65,7 @@ class GuiProcessor:
         self.generator = None
         self.audio_recorder: AudioRecorder | None = None
         self.active_mic_btn = None
-        self.messages: list[TextModel] = []
         self.wait_ico = None
-        self.conversation: ConversationModel | None = None
         self.questionare: dict[str, str] = {}
         self.available_langs = None
         self.localized_available_langs = None
@@ -78,16 +76,15 @@ class GuiProcessor:
         self.page_container = None
         self.review: TextModel | None = None
         self.global_conv_storage: ConversationStorageHelper = app.conversations_storage
-        self._conv_in_storage: Conversation | None = None
-        # self.global_conv_storage = self.app.storage.general.get('conversations')
-        # self.app.storage.general['conversations'] = {}
-        # self.global_conv_storage = self.app.storage.general['conversations']
-        # self.global_conv_storage = app.storage.general['conversations'] =
+        self.conv_model: ConversationModel | None = None
+        self.conv_storage: Conversation | None = None
         #####################################################################################################
 
     @property
-    def interlocutor_lang(self):
-        return self._interlocutor_lang
+    def localized_language(self) -> str | None:
+        return self.localized_available_langs.get(self.selected_lang)
+
+    #####################################################################################################
 
     def element(self, element_name):
         return self.storage['elements'].get(element_name)
@@ -103,12 +100,6 @@ class GuiProcessor:
     def langs_options(self, direction: Literal['source', 'target'] = 'target') -> dict[str, str]:
         """Для получения списка отображаемых языков на gui (без дефолтного языка)"""
         return self.localized_available_langs
-        # displayed_langs_opts = self.localized_available_langs.copy()
-        # if direction == 'target':
-        #     displayed_langs_opts.pop(self.base_lang, None)
-        # elif direction == 'source':
-        #     displayed_langs_opts.pop(self.selected_lang, None)
-        # return displayed_langs_opts
 
     #####################################################################################################
 
@@ -133,8 +124,7 @@ class GuiProcessor:
     #####################################################################################################
 
     def set_interlocutor_language(self) -> None:
-        cur_conv = self.global_conv_storage.get_conv(self.conversation.primary_uuid)
-        self._interlocutor_lang = cur_conv.get_interlocutor_lang_by_session(session_id=self.session_uuid)
+        self._interlocutor_lang = self.conv_storage.get_interlocutor_lang_by_session(session_id=self.session_uuid)
 
     #####################################################################################################
 
@@ -168,10 +158,9 @@ class GuiProcessor:
     async def stop_mic_record(self, client: bool = True) -> None:
         """Конец записи на странице диалога."""
         # dialog_background: Final = self.element('dialog_background')
-        for session_id in self._conv_in_storage.shared_elements:
-            dialog_background = self._conv_in_storage.shared_elements[session_id]['dialog_background']
+        for session_id in self.conv_storage.shared_elements:
+            dialog_background = self.conv_storage.shared_elements[session_id]['dialog_background']
             if dialog_background.visible:
-                print("Hide dialog background")
                 dialog_background.set_visibility(False)
 
         if self.audio_recorder is not None:
@@ -180,31 +169,16 @@ class GuiProcessor:
             self.active_mic_btn.set_visibility(True)
 
         with self.element('chat'):  # добавление иконки ожидания при нажатии на микрофон
-            # if dialog_background.visible:
-            #     dialog_background.set_visibility(False)
             with ui.row().classes('message-container').classes(
-                'justify-end' if client else 'justify-start') as self.wait_ico:
+                    'justify-end' if client else 'justify-start'
+            ) as self.wait_ico:
                 with ui.row().classes('client-spinner-container' if client else 'operator-spinner-container'):
                     ui.element('span').classes('spinner msg-spinner')
 
     #####################################################################################################
 
-    async def check_interlocutor_messages(self):
-        chat: Final = self.element('chat')
-        if not chat:
-            print('There is no "chat" element')
-            return
-        if self._conv_in_storage is None:
-            return
-        interlocutor_session_id = self._conv_in_storage.get_interlocutor_session_id(client_session_id=self.session_uuid)
-        with chat:
-            while msg := self._conv_in_storage.get_message(interlocutor_session_id):
-                print(f'Recieved msg - {msg}')
-                await self._add_dialog_msg(msg)
-            print('No messages in queue')
-    #####################################################################################################
-
-    async def _add_dialog_msg(self, message: TextModel, fixed: bool = False) -> None:
+    async def add_dialog_msg(self, message: TextModel) -> None:
+        # FIXME / TODO is_client=True - семантически означает собеседника. is_client=False - текущего пользователя.
         """
         Функция добавляет сообщение на страницу диалога.
         Если установлен флаг fixed=True, добавится отредактированный текст.
@@ -219,7 +193,7 @@ class GuiProcessor:
                 with ui.row():
                     with ui.column().style('width:440px'):
                         or_t = ui.label(
-                            text=message.fixed_text if fixed else message.recognized_text,
+                            text=message.fixed_text if message.fixed_text else message.recognized_text,
                         ).style(
                             text_align if is_client else 'text-align:left',
                         ).classes(
@@ -237,14 +211,14 @@ class GuiProcessor:
                         ).props(
                             'dir="ltr"' if is_client else f'dir="{client_direction}"',
                         )
-
-                    with ui.column().classes('edit_msg_container h-full items-center'):
-                        ui.html(
-                            content='<i class="material-icons edit-ico">edit</i>'
-                        ).on(
-                            type='click',
-                            handler=lambda _: self.edit_text(or_t, tr_t, is_client, message),
-                        )
+                    if not is_client:
+                        with ui.column().classes('edit_msg_container h-full items-center'):
+                            ui.html(
+                                content='<i class="material-icons edit-ico">edit</i>'
+                            ).on(
+                                type='click',
+                                handler=lambda _: self.edit_text(or_t, tr_t, is_client, message),
+                            )
 
     #####################################################################################################
 
@@ -268,7 +242,7 @@ class GuiProcessor:
             if error_msg:
                 ui.notify(self.localize(TKey.REC_ERROR_MSG), position='top', type='negative')
             mic.props(remove='disabled').on(type='click', handler=self.start_mic_record)
-            if not self.messages and not dialog_background.visible:
+            if not self.conv_storage.messages and not dialog_background.visible:
                 dialog_background.set_visibility(True)
             await self._close_wait_ico()
             await asyncio.sleep(0.1)
@@ -303,43 +277,19 @@ class GuiProcessor:
                     recognized_text=recognized_text,
                     translated_text=translated_text,
                     owner_session_uuid=self.session_uuid,
-                    conversation_id=self.conversation  # TODO CHECK IF IT WILL WORK
+                    conversation_id=self.conv_model  # TODO CHECK IF IT WILL WORK
                 ).upsert()
-                self.messages.append(message)
-                # TODO попробовать все меседжи положить в общий список
-                self._conv_in_storage.messages.append(message)
+                self.conv_storage.messages.append(message)
 
                 await _deactivate_record()
 
+                # TODO check maybe i can refresh chat without context manager here...
                 with chat:
                     chat_messages.refresh()
 
                 return
 
         await _deactivate_record(error_msg=True)
-
-    # @ui.refreshable
-    # async def chat_messages(self):
-    #     print('render messages')
-    #     for message in self._conv_in_storage.messages:
-    #         # await self._add_dialog_msg(message)
-    #         is_client = str(message.owner_session_uuid.primary_uuid) != self.session_uuid
-    #         client_direction = self.direction()
-    #         ui.chat_message(
-    #             text=message.translated_text,
-    #             sent=is_client,
-    #         )
-        # interlocutor_session_id = self._conv_in_storage.get_interlocutor_session_id(client_session_id=self.session_uuid)
-        #
-        # if self._conv_in_storage.messages.get(interlocutor_session_id):
-        #     print('Process interlocutor messages')
-        #     for message in self._conv_in_storage.messages[interlocutor_session_id]:
-        #         await self._add_dialog_msg(message)
-        # if self._conv_in_storage.messages.get(self.session_uuid):
-        #     print('Process client messages')
-        #     for message in self._conv_in_storage.messages[self.session_uuid]:
-        #         await self._add_dialog_msg(message)
-
 
     #####################################################################################################
 
@@ -366,32 +316,31 @@ class GuiProcessor:
         self.selected_lang = None
         self.available_langs, self.langs_directions = await create_available_langs_list(self.app)
         await self.create_localized_available_langs()
-        self.messages = []
         self.review = None
         self.questionare = {}
         if conversation is not None:
-            # TODO Обрабатываем поведение когда conversation у пользователя уже есть conversation
-            self.conversation = conversation
-            if not self.global_conv_storage.get_conv(self.conversation.primary_uuid):
-                self._conv_in_storage = self.global_conv_storage.create_conv(conv_id=self.conversation.primary_uuid)
-                self._conv_in_storage.add_session_to_conv(self.session_uuid)
+            # TODO Обрабатываем поведение когда у пользователя уже есть conv_model
+            self.conv_model = conversation
+            if not self.global_conv_storage.get_conv(self.conv_model.primary_uuid):
+                self.conv_storage = self.global_conv_storage.create_conv(conv_id=self.conv_model.primary_uuid)
+                self.conv_storage.add_session_to_conv(self.session_uuid)
             else:
-                self._conv_in_storage = self.global_conv_storage.get_conv(conv_id=self.conversation.primary_uuid)
+                self.conv_storage = self.global_conv_storage.get_conv(conv_id=self.conv_model.primary_uuid)
         else:
-            # TODO Обрабатываем поведение когда у пользователя нет conversation
+            # TODO Обрабатываем поведение когда у пользователя нет conv_model
             conv = await check_waiting_conversation(session_id=self.session_uuid, user_id=self.user.primary_uuid)
             if conv is not None:
-                # Когда уже есть conversation на ожидании
-                self.conversation = conv
-                self.conversation.second_user_session = self.session_uuid
-                await self.conversation.upsert()
-                self._conv_in_storage = self.global_conv_storage.get_conv(self.conversation.primary_uuid)
-                self._conv_in_storage.add_session_to_conv(self.session_uuid)
+                # Когда уже есть conv_model на ожидании
+                self.conv_model = conv
+                self.conv_model.second_user_session = self.session_uuid
+                await self.conv_model.upsert()
+                self.conv_storage = self.global_conv_storage.get_conv(self.conv_model.primary_uuid)
+                self.conv_storage.add_session_to_conv(self.session_uuid)
             else:
-                # Когда создаём новый conversation
-                self.conversation = await ConversationModel(first_user_session=self.session_uuid).upsert()
-                self._conv_in_storage = self.global_conv_storage.create_conv(conv_id=self.conversation.primary_uuid)
-                self._conv_in_storage.add_session_to_conv(self.session_uuid)
+                # Когда создаём новый conv_model
+                self.conv_model = await ConversationModel(first_user_session=self.session_uuid).upsert()
+                self.conv_storage = self.global_conv_storage.create_conv(conv_id=self.conv_model.primary_uuid)
+                self.conv_storage.add_session_to_conv(self.session_uuid)
         if self.storage is not None:
             if self.storage.get('elements'):
                 self.storage = prepare_session_storage(self.storage)
@@ -401,11 +350,7 @@ class GuiProcessor:
 
     async def prepare_dialog_lang_selector(self) -> None:
         await self.create_localized_available_langs()
-        if lang_selector_target := self.element('client_lang_selector'):
-            lang_selector_target.set_options(self.langs_options('target'))
-            lang_selector_target.set_value(self.selected_lang)
-        if lang_selector_source := self.element('source_lang_select'):
-            lang_selector_source.set_options(self.langs_options('source'))
+        # TODO Если надо будет обработать language_selector то эту логику добавлять здесь.
 
     #####################################################################################################
 
@@ -418,27 +363,17 @@ class GuiProcessor:
 
     #####################################################################################################
 
-    async def restore_conversation(self, conversation: ConversationModel, conv_in_storage: Conversation):
+    async def restore_conversation(self, conversation: ConversationModel):
         """Восстановления состояния страницы из данных бд последней беседы из текущей сессии"""
         await self.init_start_page(start_page_index=1, conversation=conversation)
-        self._conv_in_storage = conv_in_storage
-        self.selected_lang = conv_in_storage.get_selected_lang_by_session(session_id=self.session_uuid)
+        self.selected_lang = self.conv_storage.get_selected_lang_by_session(session_id=self.session_uuid)
         await self.prepare_dialog_lang_selector()
         await self.lang_selector_target_handler(self.selected_lang)
 
-        messages = await TextModel.objects.filter(
-            conversation_id__primary_uuid=self.conversation.primary_uuid,
-        ).order_by( # .exclude(type='feedback')
-            'create_ts'
-        ).all()
-
-        if messages:
+        if self.conv_storage.messages:
             self.element('dialog_background').set_visibility(False)
             with self.element('chat'):
                 self.element('chat_messages').refresh()
-                # for message in messages:
-                #     self.messages.append(message)
-                #     await self._add_dialog_msg(message, fixed=(message.edit_ts != None))
 
     #####################################################################################################
 
@@ -499,11 +434,11 @@ class GuiProcessor:
         """Устанавливает язык в селекторе на странице диалога"""
         self.selected_lang = lang
         self.global_conv_storage.handle_select_lang(
-            conv_id=self.conversation.primary_uuid,
+            conv_id=self.conv_model.primary_uuid,
             session_id=self.session_uuid,
             lang=lang,
         )
-        # await self.conversation.upsert(selected_lang=self.selected_lang)
+        # await self.conv_model.upsert(selected_lang=self.selected_lang)
 
     #####################################################################################################
 
@@ -569,18 +504,25 @@ class GuiProcessor:
     @check_session_exp
     async def edit_text(self, text_elem, translated_elem, client, text: TextModel):
         """Функция редактирования сообщений."""
+        # TODO Здесь надо обработать обновление всех сообщений при изменении одного из сообщений.
         if text is None:
             self.logger.warning('Edit text object is None')
             return
+
         async def set_new_text():
             corrected_text = pop_up_input.value
-            translated_corrected_text = await self._translate(corrected_text, client=client)
+            translated_corrected_text = await self._translate(corrected_text)
+            chat_messages: Final = self.element('chat_messages')
 
-            await text.upsert(
-                fixed_text=corrected_text,
-                translated_text=translated_corrected_text,
-                edit_ts=now_utc(),
-            )
+            text.fixed_text = corrected_text
+            text.translated_text = translated_corrected_text
+            text.edit_ts = now_utc()
+            await text.update()
+            # await text.upsert(
+            #     fixed_text=corrected_text,
+            #     translated_text=translated_corrected_text,
+            #     edit_ts=now_utc(),
+            # )
 
             if isinstance(text_elem, Textarea):
                 text_elem.set_value(corrected_text)
@@ -590,6 +532,8 @@ class GuiProcessor:
                 translated_elem.set_value(translated_corrected_text)
             else:
                 translated_elem.set_text(translated_corrected_text)
+            if chat_messages:
+                chat_messages.refresh()
             dialog.close()
             await asyncio.sleep(0.2)
 
@@ -634,7 +578,7 @@ class GuiProcessor:
         """Функция ввода отзыва. Создаёт модалку для ввода текста."""
         async def set_new_text():
             input_text = pop_up_input.value
-            translated_input_text = await self._translate(input_text, client=True)
+            translated_input_text = await self._translate(input_text)
 
             self.review = await TextModel(
                 create_ts=now_utc(),
@@ -642,8 +586,8 @@ class GuiProcessor:
                 lang_to=self.base_lang,
                 recognized_text=input_text,
                 translated_text=translated_input_text,
-                type='feedback',
-                conversation_id=self.conversation.primary_uuid
+                # type='feedback',
+                conversation_id=self.conv_model,
             ).upsert()
 
             if isinstance(text_elem, Textarea):
@@ -721,8 +665,8 @@ class GuiProcessor:
                     lang_to=self.base_lang,
                     recognized_text=recognized_review_text,
                     translated_text=translated_review_text,
-                    type='feedback',
-                    conversation_id=self.conversation.primary_uuid
+                    # type='feedback',
+                    conversation_id=self.conv_model
                 ).upsert()
 
                 review_orig_text_element.props(add=f'dir="{self.direction()}"')
@@ -761,10 +705,10 @@ class GuiProcessor:
 
     @check_session_exp
     async def close_conv_and_next(self):
-        self.conversation.end_ts = now_utc()
+        self.conv_model.end_ts = now_utc()
         if self.questionare:
-            self.conversation.questionare = orjson_dumps_to_str(self.questionare)
-        await self.conversation.update()
+            self.conv_model.questionare = orjson_dumps_to_str(self.questionare)
+        await self.conv_model.update()
         await self.next_page()
 
 #####################################################################################################

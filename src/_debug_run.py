@@ -99,7 +99,7 @@ def _after_all_started(logger: Logger) -> None:
     if proc is not None:
         proc.terminate()
         proc.wait()
-    _PROC_INFO.proc = _run_lt(logger)
+    # _PROC_INFO.proc = _run_lt(logger)
 
 #####################################################################################################
 

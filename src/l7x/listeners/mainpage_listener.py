@@ -137,7 +137,7 @@ async def _show_mainpage(request: Request) -> None:
             if selected_lang is None:
                 await gui_processor.init_start_page(conversation=last_unclosed_conversation)
             else:
-                await gui_processor.restore_conversation(conversation=last_unclosed_conversation, conv_in_storage=conv_in_storage)
+                await gui_processor.restore_conversation(conversation=last_unclosed_conversation)
     else:
         await gui_processor.init_start_page()
 

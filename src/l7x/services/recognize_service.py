@@ -1,5 +1,4 @@
 #####################################################################################################
-import random
 from abc import abstractmethod
 from http import HTTPStatus
 from logging import Logger
@@ -10,7 +9,7 @@ from aiohttp import BytesPayload, ClientSession, FormData
 
 from l7x.configs.settings import AppSettings
 from l7x.services.base import BaseService
-from l7x.utils.orjson_utils import orjson_dumps
+from l7x.utils.orjson_utils import orjson_dumps, orjson_loads
 
 #####################################################################################################
 
@@ -52,19 +51,24 @@ class PrivateRecognizeService(RecognizeService):
         data.add_field('output_native', 'false')
         data.add_field('file', wav, filename=file_name, content_type=mime_type)
         data.add_field('denoise', 'false')
-        return f"Placeholder value {random.randint(1, 500)}"
-        # recognize_resp = await self._aiohttp_client.post(
-        #     url=self._url,
-        #     data=data,
-        # )
-        #
-        # if recognize_resp.status == HTTPStatus.OK:
-        #     recognize_json = await recognize_resp.json(loads=orjson_loads)
-        #     recognized_text = recognize_json.get('result', '')
-        # else:
-        #     self._logger.warning(f'Return invalid status for api/speech-to-text [{recognize_resp.status}]')
-        #     recognized_text = ''
-        #
-        # return recognized_text
+        # return f"Placeholder value {random.randint(1, 500)}"
+        try:
+            recognize_resp = await self._aiohttp_client.post(
+                url=self._url,
+                data=data,
+                timeout=40,
+            )
+        except Exception as ex:
+            self._logger.error(f'There was an error when trying to recognize. Error info: {ex}', exc_info=ex)
+            return ''
+
+        if recognize_resp.status == HTTPStatus.OK:
+            recognize_json = await recognize_resp.json(loads=orjson_loads)
+            recognized_text = recognize_json.get('result', '')
+        else:
+            self._logger.warning(f'Return invalid status for api/speech-to-text [{recognize_resp.status}]')
+            recognized_text = ''
+
+        return recognized_text
 
 #####################################################################################################

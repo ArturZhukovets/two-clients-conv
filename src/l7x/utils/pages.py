@@ -4,7 +4,7 @@ from typing import Final
 from nicegui import ui
 from nicegui.observables import ObservableDict
 
-from l7x.db import ConversationModel, UserModel
+from l7x.db import UserModel
 from l7x.types.localization import TKey
 from l7x.utils.nicegui_utils import GuiProcessor
 from l7x.utils.storage_utils import Conversation
@@ -18,7 +18,7 @@ async def header_gui(gp: GuiProcessor, storage: ObservableDict) -> None:
     with ui.row().classes('head-container'):
         ui.image('/static/images/logo_main.svg').classes('company-logo')
         with ui.row().classes(
-            'dialog-close-btn-container',
+            'dialog-close-btn-container hidden',  # TODO убрать hidden
         ).on(
             type='click',
             handler=gp.close_dialog_btn_handler,
@@ -53,7 +53,7 @@ async def select_lang_page_gui(gp: GuiProcessor, storage: ObservableDict):
             target_name='selected_lang',
             backward=lambda x: (x is not None),
         )
-    conversation_number = 'second' if gp.conversation.second_user_session else 'first'
+    conversation_number = 'second' if gp.conv_model.second_user_session else 'first'
 
     ui.notify(f'You are connected as a {conversation_number}')
     storage['elements'].update({
@@ -62,14 +62,12 @@ async def select_lang_page_gui(gp: GuiProcessor, storage: ObservableDict):
         'confirm_lang_button': confirm_lang_button,
     })
 
-    d = True
-
 #####################################################################################################
 
 # async def waiting_conversation_page_gui(gp: GuiProcessor, storage: ObservableDict):
 #
 #     async def conv_polling():
-#         conv_uuid = gp.conversation.primary_uuid
+#         conv_uuid = gp.conv_model.primary_uuid
 #         conv = await ConversationModel.objects.get(primary_uuid=conv_uuid)
 #         if conv.end_ts is not None:
 #             ui.notify('Conversation was ended')
@@ -83,7 +81,7 @@ async def select_lang_page_gui(gp: GuiProcessor, storage: ObservableDict):
 #             waiting_card.set_visibility(False)
 #             timer.cancel()
 #
-#     if not gp.conversation.second_user_session:
+#     if not gp.conv_model.second_user_session:
 #         with ui.card().classes('justify-center').tailwind.width('full').height('full') as waiting_card:
 #             ui.label('Waiting for the second client')
 #             spinner = ui.spinner()
@@ -94,17 +92,11 @@ async def select_lang_page_gui(gp: GuiProcessor, storage: ObservableDict):
 def invert_visibility(x: bool):
     return not x
 
+# TODO Check maybe its possible to move this code to GuiProcessor
 @ui.refreshable
-async def chat_messages(gp, conv):
-    print('render messages')
+async def chat_messages(gp, conv) -> None:
     for message in conv.messages:
-        # await self._add_dialog_msg(message)
-        is_client = str(message.owner_session_uuid.primary_uuid) != gp.session_uuid
-        ui.chat_message(
-            text=message.translated_text,
-            sent=is_client,
-        )
-
+        await gp.add_dialog_msg(message)
 
 async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
 
@@ -116,19 +108,19 @@ async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
             waiting_card.set_visibility(False)
             timer.cancel()
 
-    conv_id = str(gp.conversation.primary_uuid)
+    conv_id = str(gp.conv_model.primary_uuid)
     cur_conversation: Conversation = gp.global_conv_storage.get_conv(conv_id)
     cur_user: Final[UserModel] = gp.user
     user_direction_in_conv = cur_conversation.get_direction_by_session(gp.session_uuid)
 
     with ui.column().classes('main-block-container'):
 
-        with ui.card().classes('justify-center') as waiting_card:
+        with ui.card().classes('flex justify-center items-center') as waiting_card:
             waiting_card.tailwind.width('full').height('full')
-            ui.label('Waiting for the second client')
-            ui.label(f'Current conversation: {cur_conversation.conv_id}')
-            ui.label(f'First user: {cur_conversation.first_user_session}')
-            spinner = ui.spinner()
+            ui.label('Waiting for the second client...')
+            # ui.label(f'Current conversation: {cur_conversation.conv_id}')
+            # ui.label(f'First user: {cur_conversation.first_user_session}')
+            spinner = ui.spinner(size='xl')
             timer = ui.timer(3.0, conv_polling)
 
         with ui.element('div').classes('centered-container') as dialog_background:
@@ -176,38 +168,21 @@ async def dialog_page_gui(gp: GuiProcessor, storage: ObservableDict):
                     type='click',
                     handler=lambda _: gp.stop_mic_record(client=False),
                 )
-                if not gp.app.app_settings.enable_base_lang_select:
-                    ui.label(text=gp.localized_available_langs.get(gp.selected_lang)).classes('mic-lang-text w-full')
-                else:
-                    source_lang_select = ui.select(
-                        options=gp.langs_options('source'),
-                        on_change=lambda e: gp.lang_selector_source_handler(e.value),
-                    ).classes(
-                        'mic-lang-selector',
-                    ).props(
-                        'rounded standout v-model="model" dir="auto"',
-                    ).bind_value_from(
-                        target_object=gp,
-                        target_name='base_lang'
-                    )
-                    storage['elements'].update({
-                        'source_lang_select': source_lang_select
-                    })
+                ui.label().bind_text_from(gp, target_name='localized_language').classes('mic-lang-text w-full')
                 mic_active.set_visibility(False)
 
         with ui.column().classes('start-mic-block'):
-            with ui.row().classes('justify-center gap-0'):
-                ui.label(text=f'You are the {user_direction_in_conv} in conversation').classes('mt-4 text-zinc-500')
-                ui.label().classes('mt-4 text-zinc-500').bind_text_from(gp, target_name='selected_lang',
-                                                                        backward=lambda x: f"Your selected lang is {x}")
-                ui.label().classes('mt-4 text-zinc-500').bind_text_from(gp, target_name='interlocutor_lang',
-                                                                        backward=lambda
-                                                                            x: f"Interlocutor selected lang is {x}")
-                ui.label(text=f'Current user: {cur_user.full_name}').classes('mt-4 text-zinc-500')
+            if gp.app.app_settings.is_dev_mode:
+                with ui.row().classes('justify-center gap-0'):
+                    ui.label(text=f'You are the {user_direction_in_conv} in conversation').classes('mt-4 text-zinc-500')
+                    ui.label().classes('mt-4 text-zinc-500').bind_text_from(gp, target_name='selected_lang',
+                                                                            backward=lambda x: f"Your selected lang is {x}")
+                    ui.label().classes('mt-4 text-zinc-500').bind_text_from(gp, target_name='interlocutor_lang',
+                                                                            backward=lambda
+                                                                                x: f"Interlocutor selected lang is {x}")
+                    ui.label(text=f'Current user: {cur_user.full_name}').classes('mt-4 text-zinc-500')
 
     cur_conversation.add_elem(str(gp.session_uuid), 'dialog_background', dialog_background)
-    # cur_conversation.shared_elements[str(gp.session_uuid)]['dialog_background'] = dialog_background
-    # cur_conversation.shared_elements['dialog_placeholder'] = dialog_placeholder
 
     storage['elements'].update({
         'dialog_background': dialog_background,

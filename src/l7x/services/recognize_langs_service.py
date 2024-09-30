@@ -72,13 +72,13 @@ class PrivateRecognizerLangsService(RecognizerLangsService):
 
     def __init__(self, app_settings: AppSettings, aiohttp_client: ClientSession, logger: Logger) -> None:
         super().__init__(app_settings, aiohttp_client, logger)
+        self._is_dev_mode: bool = app_settings.is_dev_mode
         self._url: Final = urljoin(app_settings.translate_api_url, 'api/get-speech-to-text-languages')
 
     #####################################################################################################
 
     async def _get_languages(self, /) -> Mapping[str, LanguageDetail]:
-        # FIXME Убрать обработку ошибок
-        if True:
+        if self._is_dev_mode:
             languages = [
                 {'codeName': 'English', 'code_alpha_1': 'en', 'rtl': False},
                 {'codeName': 'Spanish', 'code_alpha_1': 'es', 'rtl': False},
@@ -93,8 +93,9 @@ class PrivateRecognizerLangsService(RecognizerLangsService):
 
             languages: Sequence[LangInfo] = await get_languages_resp.json(loads=orjson_loads)
 
-        if not languages:
-            return {}
+            if not languages:
+                return {}
+
         return {
             lang.get('code_alpha_1'): LanguageDetail(code=lang.get('codeName'), rtl=lang.get('rtl'))
             for lang in languages
